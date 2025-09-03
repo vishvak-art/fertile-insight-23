@@ -3,6 +3,8 @@ const MLPredictor = require('../services/ml-predictor');
 const MLIntegration = require('../services/ml-integration');
 const weatherCache = require('../services/weather-cache');
 const axios = require('axios');
+const weatherCache = require('../services/weather-cache');
+const axios = require('axios');
 const router = express.Router();
 
 // Initialize services
@@ -33,6 +35,35 @@ router.post('/predict', async (req, res) => {
         error: 'Missing required soil features',
         missing_fields: missingFields
       });
+    }
+
+    // Enrich with weather data if location is provided
+    let enrichedSoilFeatures = { ...soil_features };
+    let locationMeta = null;
+    let environmentalFactors = {};
+
+    if (location && location.lat && location.lon) {
+      try {
+        locationMeta = await enrichWithLocationWeather(location.lat, location.lon);
+        
+        // Merge weather data into soil features
+        if (locationMeta.weather) {
+          // Update temperature if weather is available and more recent
+          if (locationMeta.weather.temperature) {
+            enrichedSoilFeatures.temperature = locationMeta.weather.temperature;
+          }
+          
+          // Add environmental factors
+          environmentalFactors = {
+            current_weather: locationMeta.weather.description,
+            humidity: locationMeta.weather.humidity,
+            location_address: locationMeta.address?.formatted || 'Unknown location'
+          };
+        }
+      } catch (error) {
+        console.warn('Weather enrichment failed:', error.message);
+        // Continue without weather data
+      }
     }
 
     // Enrich with weather data if location is provided
@@ -119,12 +150,20 @@ router.post('/samples', async (req, res) => {
     const sample = {
       id: String(soilSamples.length + 1),
       user_id: user_id || 'anonymous',
-      soil_features,
+      soil_features: enrichedSoilFeatures,
       location,
       crop_preference,
       prediction,
       created_at: new Date().toISOString()
-    };
+    // Get ML prediction (with fallback)
+    let mlResult = null;
+    try {
+      mlResult = await mlIntegration.callPythonPredictor(soil_features);
+    } catch (error) {
+      console.warn('ML prediction failed, using rule-based only:', error.message);
+    }
+
+    // Get rule-based prediction
 
     soilSamples.push(sample);
     
@@ -221,9 +260,20 @@ router.post('/chat', async (req, res) => {
     }
 
     res.json({
+    // Combine ML and rule-based results
+    const combinedResult = {
+      ...prediction,
+      prediction_ml: mlResult?.prediction,
+      ml_confidence: mlResult?.confidence,
+      ml_probabilities: mlResult?.probabilities,
+      ml_error: mlResult?.error || (mlResult ? null : 'ML prediction unavailable'),
+      environmental_factors: environmentalFactors,
+      location_meta: locationMeta
+    };
+    
       success: true,
       reply,
-      suggested_actions,
+      prediction: combinedResult,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -234,6 +284,82 @@ router.post('/chat', async (req, res) => {
     });
   }
 });
+
+// Weather and location enrichment function
+async function enrichWithLocationWeather(lat, lon) {
+  try {
+    // Check cache first
+    const cached = weatherCache.get(lat, lon);
+    if (cached) {
+      console.log('Using cached weather data');
+      return cached;
+    }
+
+    // Get weather data
+    let weatherData = null;
+    if (process.env.OPENWEATHER_API_KEY && process.env.OPENWEATHER_API_KEY !== 'your_openweather_api_key_here') {
+      try {
+        const weatherResponse = await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
+          params: {
+            lat,
+            lon,
+            appid: process.env.OPENWEATHER_API_KEY,
+            units: 'metric'
+          }
+        });
+
+        weatherData = {
+          temperature: weatherResponse.data.main.temp,
+          humidity: weatherResponse.data.main.humidity,
+          description: weatherResponse.data.weather[0].description,
+          source: 'openweathermap'
+        };
+      } catch (error) {
+        console.warn('OpenWeatherMap API failed:', error.message);
+      }
+    }
+
+    // Get location data (reverse geocoding)
+    let addressData = null;
+    try {
+      const geocodeResponse = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
+        params: {
+          format: 'json',
+          lat,
+          lon,
+          zoom: 10
+        }
+      });
+
+      if (geocodeResponse.data) {
+        const { display_name, address } = geocodeResponse.data;
+        addressData = {
+          formatted: display_name,
+          city: address?.city || address?.town || address?.village,
+          country: address?.country,
+          region: address?.state || address?.region
+        };
+      }
+    } catch (error) {
+      console.warn('Reverse geocoding failed:', error.message);
+    }
+
+    const enrichedData = {
+      location: { lat, lon },
+      weather: weatherData,
+      address: addressData,
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result
+    weatherCache.set(lat, lon, enrichedData);
+
+    return enrichedData;
+  } catch (error) {
+    console.error('Location/weather enrichment failed:', error);
+    throw error;
+  }
+}
 
 // Weather and location enrichment function
 async function enrichWithLocationWeather(lat, lon) {

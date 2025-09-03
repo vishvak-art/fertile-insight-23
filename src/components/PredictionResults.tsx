@@ -42,7 +42,7 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
     setIsGeneratingReport(true);
     
     try {
-      const response = await fetch('/api/reports/report', {
+      const response = await fetch('http://localhost:3001/api/reports/report', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,7 +66,7 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
         });
 
         // Download PDF automatically
-        const pdfUrl = data.download_urls.pdf;
+        const pdfUrl = `http://localhost:3001${data.download_urls.pdf}`;
         const link = document.createElement('a');
         link.href = pdfUrl;
         link.download = `soil_report_${data.report_id}.pdf`;
@@ -86,6 +86,7 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
       setIsGeneratingReport(false);
     }
   };
+  
   const getFertilityIcon = () => {
     switch (prediction.fertility_level) {
       case 'High': return <CheckCircle className="h-6 w-6 text-fertility-high" />;
@@ -156,6 +157,13 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
                   <h2 className="text-3xl font-bold text-foreground">
                     {prediction.fertility_level} Fertility
                   </h2>
+                  {/* Show ML prediction if available */}
+                  {prediction.prediction_ml && (
+                    <p className="text-sm text-muted-foreground">
+                      ML Model: {prediction.prediction_ml} 
+                      {prediction.ml_confidence && ` (${Math.round(prediction.ml_confidence * 100)}% confidence)`}
+                    </p>
+                  )}
                    <p className="text-xl text-muted-foreground">
                      Score: {formatFertilityScore(prediction.fertility_score)} fertility rating
                    </p>
@@ -193,6 +201,33 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
                 <span>Excellent (70-100)</span>
               </div>
             </div>
+
+            {/* Environmental Factors */}
+            {prediction.environmental_factors && Object.keys(prediction.environmental_factors).length > 0 && (
+              <div className="mt-6 p-4 bg-muted rounded-lg">
+                <h4 className="font-semibold text-foreground mb-2">Environmental Context</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {prediction.environmental_factors.current_weather && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Weather:</span>
+                      <span className="font-medium">{prediction.environmental_factors.current_weather}</span>
+                    </div>
+                  )}
+                  {prediction.environmental_factors.humidity && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Humidity:</span>
+                      <span className="font-medium">{prediction.environmental_factors.humidity}%</span>
+                    </div>
+                  )}
+                  {prediction.environmental_factors.location_address && (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Location: </span>
+                      <span className="font-medium text-xs">{prediction.environmental_factors.location_address}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

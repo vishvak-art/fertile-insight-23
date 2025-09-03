@@ -116,7 +116,7 @@ const SoilPrediction: React.FC = () => {
     }
   };
 
-  const handleAutoFillLocationAndWeather = async () => {
+  const handleAutoDetectLocationAndWeather = async () => {
     setLocationDetecting(true);
     setTemperatureDetecting(true);
     
@@ -433,7 +433,7 @@ const SoilPrediction: React.FC = () => {
                         type="button"
                         variant="default"
                         size="sm"
-                        onClick={handleAutoFillLocationAndWeather}
+                        onClick={handleAutoDetectLocationAndWeather}
                         disabled={locationDetecting || temperatureDetecting}
                         className="h-7 px-2"
                       >

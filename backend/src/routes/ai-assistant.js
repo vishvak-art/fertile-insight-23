@@ -10,9 +10,6 @@ router.post('/assist', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Add delay for realism
-    await new Promise(resolve => setTimeout(resolve, 800));
-
     let reply;
     let suggestions = [];
     let resources = [];
@@ -90,6 +87,52 @@ router.post('/assist', async (req, res) => {
 });
 
 async function callOpenAI(message, context) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a soil fertility expert assistant. Provide concise, actionable advice about soil health, fertilizers, and crop recommendations. 
+          Context: ${context ? JSON.stringify(context) : 'No soil data provided'}
+          
+          Always format your response as JSON with:
+          - reply: 2-3 sentence answer
+          - suggestions: array of 3-4 actionable suggestions
+          - resources: array of 2-3 helpful resource names`
+        },
+        {
+          role: 'user',
+          content: message
+        }
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0].message.content;
+  
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    // Fallback if JSON parsing fails
+    return {
+      reply: content,
+      suggestions: ["Get soil test", "Apply recommended fertilizers", "Monitor crop health"],
+      resources: ["Soil guide", "Fertilizer calculator"]
+    };
+  }
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
