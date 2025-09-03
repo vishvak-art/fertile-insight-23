@@ -33,7 +33,13 @@ const SoilPrediction: React.FC = () => {
     organic_matter: 3.0,
     moisture: 25,
     ec: 0.8,
-    temperature: 25
+    temperature: 25,
+    sulfur: 12,
+    zinc: 0.7,
+    iron: 4.2,
+    copper: 0.3,
+    manganese: 3.1,
+    boron: 0.5
   });
   
   const [location, setLocation] = useState({ lat: '', lon: '' });
@@ -196,7 +202,13 @@ const SoilPrediction: React.FC = () => {
             organic_matter: 3.0,
             moisture: 25,
             ec: 0.8,
-            temperature: 25
+            temperature: 25,
+            sulfur: 12,
+            zinc: 0.7,
+            iron: 4.2,
+            copper: 0.3,
+            manganese: 3.1,
+            boron: 0.5
           });
         }}
         onBackToDashboard={() => navigate('/dashboard')}

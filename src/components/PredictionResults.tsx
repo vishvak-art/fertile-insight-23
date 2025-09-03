@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PredictionResponse, SoilFeatures } from '../types/api';
 import { formatFertilityScore, formatDosage, formatYield } from '../utils/formatters';
+import { useToast } from '@/hooks/use-toast';
+import ChatWidget from './ChatWidget';
 import { 
   CheckCircle, 
   AlertTriangle, 
@@ -16,7 +18,8 @@ import {
   Share2,
   TrendingUp,
   Package,
-  Beaker
+  Beaker,
+  Loader2
 } from 'lucide-react';
 
 interface PredictionResultsProps {
@@ -32,6 +35,57 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
   onNewTest,
   onBackToDashboard
 }) => {
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const { toast } = useToast();
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    
+    try {
+      const response = await fetch('/api/reports/report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prediction,
+          soil_features: soilFeatures,
+          metadata: {
+            generated_at: new Date().toISOString(),
+            version: '1.0'
+          }
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "Report Generated!",
+          description: "Your soil analysis report is ready for download.",
+        });
+
+        // Download PDF automatically
+        const pdfUrl = data.download_urls.pdf;
+        const link = document.createElement('a');
+        link.href = pdfUrl;
+        link.download = `soil_report_${data.report_id}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        throw new Error(data.message || 'Failed to generate report');
+      }
+    } catch (error) {
+      toast({
+        title: "Report Generation Failed",
+        description: error instanceof Error ? error.message : "Could not generate report",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
   const getFertilityIcon = () => {
     switch (prediction.fertility_level) {
       case 'High': return <CheckCircle className="h-6 w-6 text-fertility-high" />;
@@ -73,9 +127,18 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export PDF
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleGenerateReport}
+                disabled={isGeneratingReport}
+              >
+                {isGeneratingReport ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Generate Report
               </Button>
             </div>
           </div>
@@ -280,6 +343,16 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
             Back to Dashboard
           </Button>
         </div>
+
+        {/* Chat Widget */}
+        <ChatWidget 
+          context={{
+            prediction,
+            soilFeatures,
+            fertilityLevel: prediction.fertility_level,
+            fertilityScore: prediction.fertility_score
+          }}
+        />
       </div>
     </div>
   );

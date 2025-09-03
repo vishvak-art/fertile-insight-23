@@ -3,151 +3,122 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { apiService } from '../services/api';
-import { ChatMessage, ChatResponse } from '../types/api';
-import { useToast } from '@/hooks/use-toast';
 import { 
   MessageCircle, 
   Send, 
-  Mic, 
-  MicOff, 
   X, 
   Minimize2, 
-  Maximize2,
+  Maximize2, 
+  Loader2,
   Bot,
-  User,
-  Volume2
+  User
 } from 'lucide-react';
 
-interface Message {
+interface ChatMessage {
   id: string;
-  text: string;
-  isUser: boolean;
+  type: 'user' | 'assistant';
+  content: string;
   timestamp: Date;
-  suggestedActions?: string[];
+  suggestions?: string[];
+  resources?: string[];
 }
 
-const ChatWidget: React.FC = () => {
+interface ChatWidgetProps {
+  context?: any;
+  className?: string;
+}
+
+const ChatWidget: React.FC<ChatWidgetProps> = ({ context, className = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
-      text: "Hello! I'm your soil fertility assistant. I can help you with questions about soil testing, fertilizers, and crop recommendations. How can I help you today?",
-      isUser: false,
-      timestamp: new Date()
+      type: 'assistant',
+      content: "Hi! I'm your soil fertility assistant. I can help you with questions about soil health, fertilizers, nutrients, and crop recommendations. What would you like to know?",
+      timestamp: new Date(),
+      suggestions: ['How to improve soil pH?', 'What fertilizers do I need?', 'Best crops for my soil?', 'How to test soil nutrients?']
     }
   ]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recognition, setRecognition] = useState<any | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
-
-  useEffect(() => {
-    // Initialize speech recognition
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
-      
-      recognitionInstance.continuous = false;
-      recognitionInstance.interimResults = false;
-      recognitionInstance.lang = 'en-US';
-
-      recognitionInstance.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setInputMessage(transcript);
-        setIsRecording(false);
-      };
-
-      recognitionInstance.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
-        toast({
-          title: "Voice Recognition Error",
-          description: "Could not process your voice. Please try typing your message.",
-          variant: "destructive",
-        });
-      };
-
-      recognitionInstance.onend = () => {
-        setIsRecording(false);
-      };
-
-      setRecognition(recognitionInstance);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSendMessage = async (messageText?: string) => {
-    const text = messageText || inputMessage.trim();
-    if (!text) return;
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-    const newMessage: Message = {
+  useEffect(() => {
+    if (isOpen && !isMinimized) {
+      inputRef.current?.focus();
+    }
+  }, [isOpen, isMinimized]);
+
+  const sendMessage = async (message: string) => {
+    if (!message.trim()) return;
+
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      text,
-      isUser: true,
+      type: 'user',
+      content: message,
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, newMessage]);
-    setInputMessage('');
+    setMessages(prev => [...prev, userMessage]);
+    setCurrentMessage('');
     setIsLoading(true);
 
     try {
-      const response = await apiService.chat({ message: text });
-      
-      const botMessage: Message = {
+      const response = await fetch('http://localhost:3001/api/ai/assist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message,
+          context
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: data.reply,
+          timestamp: new Date(),
+          suggestions: data.suggestions || [],
+          resources: data.resources || []
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+      } else {
+        throw new Error(data.message || 'Failed to get response');
+      }
+    } catch (error) {
+      const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: response.reply,
-        isUser: false,
+        type: 'assistant',
+        content: "I'm having trouble connecting right now. Please try asking about soil pH, nutrients, or fertilizers!",
         timestamp: new Date(),
-        suggestedActions: response.suggested_actions
+        suggestions: ['Try again later', 'Ask about soil testing', 'Get fertilizer advice']
       };
 
-      setMessages(prev => [...prev, botMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm sorry, I'm having trouble processing your request right now. Please try again later.",
-        isUser: false,
-        timestamp: new Date()
-      };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleVoiceInput = () => {
-    if (!recognition) {
-      toast({
-        title: "Voice Not Supported",
-        description: "Your browser doesn't support voice recognition. Please type your message.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (isRecording) {
-      recognition.stop();
-      setIsRecording(false);
-    } else {
-      recognition.start();
-      setIsRecording(true);
-    }
-  };
-
-  const handleSuggestedAction = (action: string) => {
-    handleSendMessage(action);
+  const handleSendMessage = () => {
+    sendMessage(currentMessage);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -157,14 +128,17 @@ const ChatWidget: React.FC = () => {
     }
   };
 
+  const handleSuggestionClick = (suggestion: string) => {
+    sendMessage(suggestion);
+  };
+
   if (!isOpen) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className={`fixed bottom-4 right-4 z-50 ${className}`}>
         <Button
           onClick={() => setIsOpen(true)}
-          variant="fertility"
+          className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all"
           size="lg"
-          className="rounded-full h-14 w-14 shadow-xl hover:shadow-2xl transition-all duration-300"
         >
           <MessageCircle className="h-6 w-6" />
         </Button>
@@ -173,78 +147,71 @@ const ChatWidget: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <Card className={`shadow-2xl border-0 transition-all duration-300 ${
-        isMinimized ? 'w-80 h-16' : 'w-96 h-[600px]'
-      }`}>
-        {/* Header */}
-        <CardHeader className="p-4 border-b border-border bg-gradient-to-r from-primary to-primary-light text-primary-foreground">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="bg-primary-foreground text-primary p-2 rounded-full">
-                <Bot className="h-4 w-4" />
-              </div>
-              <div>
-                <CardTitle className="text-sm">Soil Assistant</CardTitle>
-                <p className="text-xs opacity-90">AI-powered agriculture helper</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsMinimized(!isMinimized)}
-                className="h-8 w-8 p-0 hover:bg-primary-foreground/20"
-              >
-                {isMinimized ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsOpen(false)}
-                className="h-8 w-8 p-0 hover:bg-primary-foreground/20"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
+    <div className={`fixed bottom-4 right-4 z-50 ${className}`}>
+      <Card className={`w-80 shadow-xl transition-all ${isMinimized ? 'h-16' : 'h-96'}`}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-primary text-primary-foreground rounded-t-lg">
+          <CardTitle className="text-sm font-medium flex items-center space-x-2">
+            <Bot className="h-4 w-4" />
+            <span>Soil Assistant</span>
+          </CardTitle>
+          <div className="flex items-center space-x-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsMinimized(!isMinimized)}
+              className="h-6 w-6 p-0 hover:bg-primary-hover text-primary-foreground"
+            >
+              {isMinimized ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsOpen(false)}
+              className="h-6 w-6 p-0 hover:bg-primary-hover text-primary-foreground"
+            >
+              <X className="h-3 w-3" />
+            </Button>
           </div>
         </CardHeader>
 
         {!isMinimized && (
-          <>
-            {/* Messages */}
-            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 h-[440px]">
+          <CardContent className="p-0 flex flex-col h-80">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-lg p-3 ${
-                    message.isUser 
-                      ? 'bg-primary text-primary-foreground ml-4' 
-                      : 'bg-muted text-muted-foreground mr-4'
-                  }`}>
+                <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] ${message.type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'} rounded-lg p-3`}>
                     <div className="flex items-start space-x-2">
-                      {!message.isUser && (
-                        <Bot className="h-4 w-4 mt-0.5 text-primary" />
-                      )}
+                      {message.type === 'assistant' && <Bot className="h-4 w-4 mt-0.5 flex-shrink-0" />}
+                      {message.type === 'user' && <User className="h-4 w-4 mt-0.5 flex-shrink-0" />}
                       <div className="flex-1">
-                        <p className="text-sm">{message.text}</p>
-                        {message.suggestedActions && (
-                          <div className="flex flex-wrap gap-2 mt-3">
-                            {message.suggestedActions.map((action, index) => (
+                        <p className="text-sm">{message.content}</p>
+                        
+                        {message.suggestions && message.suggestions.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {message.suggestions.map((suggestion, index) => (
                               <Badge
                                 key={index}
                                 variant="secondary"
-                                className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors text-xs"
-                                onClick={() => handleSuggestedAction(action)}
+                                className="cursor-pointer hover:bg-secondary-hover text-xs mr-1"
+                                onClick={() => handleSuggestionClick(suggestion)}
                               >
-                                {action}
+                                {suggestion}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+
+                        {message.resources && message.resources.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs opacity-75 mb-1">Resources:</p>
+                            {message.resources.map((resource, index) => (
+                              <Badge key={index} variant="outline" className="text-xs mr-1 mb-1">
+                                {resource}
                               </Badge>
                             ))}
                           </div>
                         )}
                       </div>
-                      {message.isUser && (
-                        <User className="h-4 w-4 mt-0.5 text-primary-foreground" />
-                      )}
                     </div>
                   </div>
                 </div>
@@ -252,71 +219,40 @@ const ChatWidget: React.FC = () => {
               
               {isLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-muted text-muted-foreground rounded-lg p-3 mr-4 max-w-[80%]">
+                  <div className="bg-muted rounded-lg p-3">
                     <div className="flex items-center space-x-2">
-                      <Bot className="h-4 w-4 text-primary" />
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      </div>
+                      <Bot className="h-4 w-4" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Thinking...</span>
                     </div>
                   </div>
                 </div>
               )}
+              
               <div ref={messagesEndRef} />
-            </CardContent>
+            </div>
 
-            {/* Input */}
-            <div className="p-4 border-t border-border">
-              <div className="flex items-center space-x-2">
-                <div className="flex-1 relative">
-                  <Input
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder={isRecording ? "Listening..." : "Ask about soil, fertilizers, crops..."}
-                    className="pr-12 transition-smooth focus:border-primary"
-                    disabled={isLoading || isRecording}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleVoiceInput}
-                    className={`absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 ${
-                      isRecording ? 'text-destructive hover:text-destructive' : 'text-muted-foreground hover:text-primary'
-                    }`}
-                    disabled={isLoading}
-                  >
-                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  </Button>
-                </div>
+            <div className="border-t p-4">
+              <div className="flex space-x-2">
+                <Input
+                  ref={inputRef}
+                  value={currentMessage}
+                  onChange={(e) => setCurrentMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Ask about soil, fertilizers, crops..."
+                  className="flex-1"
+                  disabled={isLoading}
+                />
                 <Button
-                  onClick={() => handleSendMessage()}
-                  disabled={isLoading || !inputMessage.trim()}
-                  variant="default"
+                  onClick={handleSendMessage}
+                  disabled={!currentMessage.trim() || isLoading}
                   size="sm"
-                  className="h-10 w-10 p-0"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
-              
-              {recognition && (
-                <p className="text-xs text-muted-foreground mt-2 text-center">
-                  {isRecording ? (
-                    <span className="flex items-center justify-center space-x-1">
-                      <Volume2 className="h-3 w-3 animate-pulse" />
-                      <span>Listening... Speak now</span>
-                    </span>
-                  ) : (
-                    "Click the mic to use voice input"
-                  )}
-                </p>
-              )}
             </div>
-          </>
+          </CardContent>
         )}
       </Card>
     </div>
