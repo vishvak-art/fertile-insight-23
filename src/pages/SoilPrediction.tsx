@@ -6,7 +6,17 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { apiService } from '../services/api';
-import { SoilFeatures, PredictionResponse } from '../types/api';
+import { SoilFeatures as OriginalSoilFeatures, PredictionResponse } from '../types/api';
+
+// Extended soil features with micronutrients
+interface ExtendedSoilFeatures extends OriginalSoilFeatures {
+  sulfur: number;
+  zinc: number;
+  iron: number;
+  copper: number;
+  manganese: number;
+  boron: number;
+}
 import { ArrowLeft, TestTube, MapPin, Sprout, Locate, Thermometer, Loader2 } from 'lucide-react';
 import PredictionResults from '@/components/PredictionResults';
 import { useLocationWeather } from '@/hooks/useLocationWeather';
@@ -15,7 +25,7 @@ const SoilPrediction: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const [soilFeatures, setSoilFeatures] = useState<SoilFeatures>({
+  const [soilFeatures, setSoilFeatures] = useState<ExtendedSoilFeatures>({
     ph: 6.5,
     nitrogen: 50,
     phosphorus: 20,
@@ -34,7 +44,7 @@ const SoilPrediction: React.FC = () => {
   
   const { getLocationOnly, getWeatherForCoords } = useLocationWeather();
 
-  const handleInputChange = (field: keyof SoilFeatures, value: string) => {
+  const handleInputChange = (field: keyof ExtendedSoilFeatures, value: string) => {
     const numValue = parseFloat(value) || 0;
     setSoilFeatures(prev => ({ ...prev, [field]: numValue }));
   };

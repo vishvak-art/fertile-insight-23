@@ -1,9 +1,11 @@
 const express = require('express');
 const MLPredictor = require('../services/ml-predictor');
+const MLIntegration = require('../services/ml-integration');
 const router = express.Router();
 
-// Initialize ML predictor
+// Initialize services
 const mlPredictor = new MLPredictor();
+const mlIntegration = new MLIntegration();
 
 // Mock database for soil samples
 let soilSamples = [];
@@ -38,12 +40,29 @@ router.post('/predict', async (req, res) => {
       crop_preference
     };
 
-    // Get ML prediction
+    // Get ML prediction (with fallback)
+    let mlResult = null;
+    try {
+      mlResult = await mlIntegration.callPythonPredictor(soil_features);
+    } catch (error) {
+      console.warn('ML prediction failed, using rule-based only:', error.message);
+    }
+
+    // Get rule-based prediction
     const prediction = await mlPredictor.predict(request);
+    
+    // Combine ML and rule-based results
+    const combinedResult = {
+      ...prediction,
+      prediction_ml: mlResult?.prediction,
+      ml_confidence: mlResult?.confidence,
+      ml_probabilities: mlResult?.probabilities,
+      ml_error: mlResult?.error || (mlResult ? null : 'ML prediction unavailable')
+    };
     
     res.json({
       success: true,
-      prediction,
+      prediction: combinedResult,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
